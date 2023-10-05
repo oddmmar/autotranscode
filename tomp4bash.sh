@@ -1,7 +1,27 @@
 #!/bin/bash
 
-# A script used to automate the transcoding of News' TV material. 
-# YYYmmdd_slug_CTN_RAW - capitlise?? Date comes from the file
+# A script used to automate the transcoding of News' TV material. The files are originally encoded in dvvideo
+# and need to be transcoded in H264/x264 for video and the audio enccoding can be copied @pcm_s16le. 
+# Use wrapper .mp4. The aspect ratio must be the as source at 16x9, bit rate unspecified (SD@3.5M and HD@8.5M ??). 
+# The script caters for input files with the follwoing structure:
+# V0, A1CH0, A2CH1 or V0, A1CH0:1 The output will alway be V0, A1CH0:1 Unique mono
+#
+# The output naming convention is as follows: YYYmmdd_SLUG_CTN_RAW - capitlise?? The date comes from the file name
+#
+# archive.db table structure:
+#   - id
+#   - absoluteFileName (absolute path minus mount point)
+#   - slug
+#   - originalSize
+#   - format (SD/HD)
+#   - engDate (story date, contained in the file name)
+#   - 
+#   - 
+#   - 
+#   - 
+#   - 
+
+############################################## Declarations ####################################################
 
 # searchDir="/Volumes/DATA/media/Transcoding/SRC"
 searchDir="/Volumes/Seapoint_Archive_NAS_Drive"
@@ -10,6 +30,9 @@ logDir="/Volumes/DATA/media/Transcoding/LOG"
 # default extension, but assignable with -e flag
 ext="mov"
 file=""
+
+################################################### DB #######################################################
+
 
 # log=$logDir/$(date +%Y-%m-%d_%H.%M.%S).log
 log=$logDir/$(date +%Y-%m-%d).log
