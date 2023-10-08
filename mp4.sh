@@ -116,10 +116,20 @@ function getUtilites() {
 
 ################################################## FILE ######################################################
 
+# $1 - name to clean
+function sanitizeFilename() {
+    local newfilename=$(basename "$1" .$ext)
+    newfilename=${newfilename// /_}
+    newfilename=${newfilename//[^a-zA-Z_]/}
+    newfilename=$(tr '[:lower:]' '[:upper:]' <<<"$newfilename")
+    newName=$newfilename
+}
+
 # $1  - fle path
 function getNames() {
-    baseName="$(basename "$1")"
-    newName=$(basename "$1" .$ext)
+    fileName="$(basename "$1")"
+    sanitizeFilename "$1"
+    # newName=$(basename "$1" .$ext) # needs fixing
     dirName="$(dirname "$1")"
 }
 
@@ -189,7 +199,7 @@ function transcode() {
             ffmpeg -hide_banner -hwaccel videotoolbox -i "$1" -b:v "$bitrate" -c:v h264_videotoolbox -map 0:v -map 0:a "$2" -y
             ret=$?
         fi
-    elif [[ "$(uname)" == "Linux"* ]]; then
+    elif [[ "$(uname)" == "Linux" ]]; then
         local hw=$(neofetch | grep -i nvidia)
         # no hw codec possible
         if [ ${#hw} == 0 ]; then
@@ -234,7 +244,7 @@ function iterate() {
     while IFS= read -r line; do
         getNames "$line"
         # get the date the story was shot. update engDate
-        getDate "$baseName"
+        getDate "$fileName"
         # gets file size in megabytes. updates a sizeInM variable
         getSize "$line"
         # originalSize=$sizeInM
