@@ -12,16 +12,18 @@
 #   - id
 #   - archiveDir (absolute path minus mount point)
 #   - slug
-#   - originalSizeM (du -m)
-#   - format (SD/HD)
+#   - originalSize (du -m)
+#   - resolution (SD/HD)
 #   - engDate (story date, contained in the file name)
-#   - adudioStreams
-#   - isProcessed
+#   - adudioStreamCount
+#   - didTranscode
 #   - didPass
 #   - newName
-#   - newSizeM
+#   - newSize
 #   -
 #   -
+
+# Dependencies: neofetch
 
 ############################################## Declarations ####################################################
 
@@ -32,6 +34,7 @@ logDir="/Volumes/DATA/media/Transcoding/LOG"
 database="archive.db"
 # default extension, but assignable with -e flag
 ext="mov"
+bitrate="10M"
 # log=$logDir/$(date +%Y-%m-%d_%H.%M.%S).log
 log=$logDir/$(date +%Y-%m-%d).log
 # create log file
@@ -64,16 +67,37 @@ function printToConsole() {
     fi
 }
 
+################################################# HELPER #####################################################
+
+function getUtilites() {
+    local depNeofetch=$(which neofetch)
+    local depSqlite=$(which sqlite3)
+
+    if [[ ${#depNeofetch} == 0 || 4{#depSqlite} == 0 ]]; then
+        if [[ "$(uname)" == "Darwin" ]]; then
+            brew install neofetch
+            brew install sqlite
+        elif [[ "$(uname)" == "Linux"* ]]; then
+            sudo apt install neofetch
+            sudo apt install sqlite3
+        fi
+    fi
+}
+
 ################################################## FILE ######################################################
 
+archiveDir="$(basename "$searchDir")"
+archiveDirFile="$archiveDir".txt
+touch "$archiveDirFile"
+find "$searchDir" -type f | grep -i raw >>"$archiveDirFile"
+
 function getDate() {
+    engDate=""
     # Use grep with a regular expression to extract 5 to 6 consecutive digits
     date=$(grep -oE '[0-9]{5,6}' <<<"$1")
-    # printToConsole "Info:" "date ${#date}"
-    if [ ${#date} != 0 ]; then
-        # printToConsole "Info:" "$1"
+    # cater for one condition only mmddYY. distinguishing between month or day short, too lengthy
+    if [ ${#date} == 6 ]; then
         fullDate=""
-        engDate=""
         lastTwoDigits="${date:4:2}"
         # Determine the century for the year (assumed to be 20 for 00-49 and 19 for 50-99)
         if [[ "$lastTwoDigits" -ge 0 && "$lastTwoDigits" -le 49 ]]; then
@@ -81,27 +105,73 @@ function getDate() {
         else
             year="19$lastTwoDigits"
         fi
-
-        # cater for one condition. distinguishing between month or day short, too lengthy
-        if [ ${#date} == 6 ]; then
-            fullDate="${date:0:4}$year"
-        # elif [ ${#date} == 5 ]; then
-        #     fullDate="0${date:0:3}${year}"
-        else
-            printToConsole "Error:" "Date format is incorrect"
-        fi
-        # printToConsole "Info:" "full date $fullDate"
+        fullDate="${date:0:4}$year"
         engDate="${fullDate:4:4}${fullDate:2:2}${fullDate:0:2}"
-        # echo "$engDate"
     else
         printToConsole "Error:" "Date format is incorrect, file connot be processed"
     fi
 }
 
-archiveDir="$(basename "$searchDir")"
-archiveDirFile="$archiveDir".txt
-touch "$archiveDirFile"
-find "$searchDir" -type f | grep -i raw >>"$archiveDirFile"
+function getSize() {
+    # only get the size, not the directory names
+    sizeInM=$(du -ms "$1" | cut -f1)
+}
+
+function getResolution() {
+    resolution=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=nw=1:nk=1 "$1")
+}
+
+function getStreamCount() {
+    aCount=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$1")
+    if [ ${#aCount} == 3 ]; then
+        # for [0:1:0] [0:2:0]
+        adudioStreamCount=2
+    else
+        # for [0:1:0] [0:1:1]
+        adudioStreamCount=1
+    fi
+
+}
+
+function transcode() {
+    # NOTE
+    # check constant bitrate
+    # scan type - has to be kept interlaced (can't set this yet)
+
+    # map all video channels and map all audio channels from in to out
+    getUtilites
+    if [[ "$(uname)" == "Darwin" ]]; then
+        local hw=$(neofetch | grep -i amd)
+        # no hw codec possible
+        if [ ${#hw} == 0 ]; then
+            # software render
+            ffmpeg -i ARGUS\ raw.mov -b:v "$bitrate" -c:v h264 -map 0:v -map 0:a "$1"
+            ret=$?
+        else
+            # hardware render
+            ffmpeg -hwaccel videotoolbox -i ARGUS\ raw.mov -b:v "$bitrate" -c:v h264_videotoolbox -map 0:v -map 0:a "$1"
+            ret=$?
+        fi
+    elif [[ "$(uname)" == "Linux"* ]]; then
+        local hw=$(neofetch | grep -i nvidia)
+        # no hw codec possible
+        if [ ${#hw} == 0 ]; then
+            # software render
+            ffmpeg -i ARGUS\ raw.mov -b:v "$bitrate" -c:v h264 -map 0:v -map 0:a "$1"
+            ret=$?
+        else
+            # hardware render
+            ffmpeg -hwaccel cuda -i ARGUS\ raw.mov -b:v "$bitrate" -c:v h264_nvenc -map 0:v -map 0:a "$1"
+            ret=$?
+        fi
+    fi
+    if [ $ret == 0 ]; then
+        didTranscode=true
+    else
+        didTranscode=false
+    fi
+    echo $didTranscode
+}
 
 ################################################### DB #######################################################
 
@@ -121,7 +191,17 @@ function populteDb() {
     while IFS= read -r line; do
         baseName="$(basename "$line")"
         dirName="$(dirname "$line")"
-        getDate "$(basename "$line")"
+        # get the date the story was shot. update engDate
+        getDate "$baseName"
+        # gets file size in megabytes. updates a sizeInM variable
+        getSize "$line"
+        # originalSize=$sizeInM
+        # updates the resolution variable with frame width
+        getResolution "$line"
+        # updates the adudioStreamCount variable
+        getStreamCount "$line"
+        # echo "$adudioStreamCount"
+        transcode "$line"
     done <"$archiveDirFile"
 }
 
@@ -188,8 +268,5 @@ fi
 #     fi
 # done
 
-# map all video channels and map all audio channels from in to out
-# ffmpeg -hwaccel videotoolbox  -i ARGUS\ raw.mov -b:v 10M -c:v h264_videotoolbox -map 0:v -map 0:a  ARGUS_RAW_10.mov
-# NOTE
-# check constant bitrate
-#  sacn type - has to be kept interlaced (can't set this)
+## WHILE DEBUGGGING
+rm "$archiveDirFile"
