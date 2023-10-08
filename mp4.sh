@@ -27,24 +27,43 @@
 
 ############################################## Declarations ####################################################
 
-searchDir="/Volumes/DATA/media/transcoding/SRC"
-# searchDir="/Volumes/Seapoint_Archive_NAS_Drive"
-dstDir="/Volumes/DATA/media/Transcoding/DST"
-logDir="/Volumes/DATA/media/Transcoding/LOG"
+destinationPath="/Volumes/DATA/media/Transcoding/DST"
+sourcePath="/Volumes/DATA/media/transcoding/SRC"
+# sourcePath="/Volumes/Seapoint_Archive_NAS_Drive"
+logPath="/Volumes/DATA/media/Transcoding/LOG"
+# name of the db to keep track of completed jobs
 database="archive.db"
+# set default bit rate. chaned dynamicaly based on resolution
+bitrate="10M" # SD
+# filter for the recursive search
+filter="raw"
 # default extension, but assignable with -e flag
 ext="mov"
-bitrate="10M"
-# log=$logDir/$(date +%Y-%m-%d_%H.%M.%S).log
-log=$logDir/$(date +%Y-%m-%d).log
+# log creation based on day (new log each new day)
+log=$logPath/$(date +%Y-%m-%d).log
 # create log file
 touch "$log"
+
+################################################# ----- #####################################################
+
+# Check if an argument was provided
+if [ $# -gt 0 ]; then
+    # reassign variables
+    while getopts e:s: flag; do
+        case "${flag}" in
+        # for -e
+        e) ext=${OPTARG} ;;
+        # for -s
+        s) sourcePath=${OPTARG} ;;
+        esac
+    done
+fi
 
 ################################################# OUTPUT #####################################################
 
 # prints to a log file defined above. takes two arguments:
 # $1 - message type
-# $2 - message
+# $2 - message content
 function printToLog() {
     # echo -e "$(date +"%T")\t$1\t\t$2" >> "$log"
     if [ "$1" == "Info:" ]; then
@@ -57,7 +76,7 @@ function printToLog() {
 
 # prints to the console. takes two arguments:
 # $1 - message type
-# $2 - message
+# $2 - message content
 function printToConsole() {
     if [ "$1" == "Info:" ]; then
         echo -e "$(date +"%T")\t$1\t\t$2"
@@ -68,6 +87,17 @@ function printToConsole() {
 }
 
 ################################################# HELPER #####################################################
+
+# initialise by creating the neccessary infrastructure
+function init() {
+    # just the directory name from the absolute path containg the archive content
+    archiveDir="$(basename "$sourcePath")"
+    # create a file named after the actual archive directory
+    archiveListFile="$archiveDir".txt
+    touch "$archiveListFile"
+    # recursively search the archive using the filter variable
+    find "$sourcePath" -type f | grep -i $filter >>"$archiveListFile"
+}
 
 function getUtilites() {
     local depNeofetch=$(which neofetch)
@@ -86,10 +116,12 @@ function getUtilites() {
 
 ################################################## FILE ######################################################
 
-archiveDir="$(basename "$searchDir")"
-archiveDirFile="$archiveDir".txt
-touch "$archiveDirFile"
-find "$searchDir" -type f | grep -i raw >>"$archiveDirFile"
+# $1  - fle path
+function getNames() {
+    baseName="$(basename "$1")"
+    newName=$(basename "$1" .$ext)
+    dirName="$(dirname "$1")"
+}
 
 function getDate() {
     engDate=""
@@ -119,6 +151,11 @@ function getSize() {
 
 function getResolution() {
     resolution=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=nw=1:nk=1 "$1")
+    if [ "$resolution" == 1080 ]; then
+        bitrate="30M"
+    else
+        bitrate="10M"
+    fi
 }
 
 function getStreamCount() {
@@ -145,11 +182,11 @@ function transcode() {
         # no hw codec possible
         if [ ${#hw} == 0 ]; then
             # software render
-            ffmpeg -i ARGUS\ raw.mov -b:v "$bitrate" -c:v h264 -map 0:v -map 0:a "$1"
+            ffmpeg -hide_banner -i "$1" -b:v "$bitrate" -c:v h264 -map 0:v -map 0:a "$2" -y
             ret=$?
         else
             # hardware render
-            ffmpeg -hwaccel videotoolbox -i ARGUS\ raw.mov -b:v "$bitrate" -c:v h264_videotoolbox -map 0:v -map 0:a "$1"
+            ffmpeg -hide_banner -hwaccel videotoolbox -i "$1" -b:v "$bitrate" -c:v h264_videotoolbox -map 0:v -map 0:a "$2" -y
             ret=$?
         fi
     elif [[ "$(uname)" == "Linux"* ]]; then
@@ -157,11 +194,11 @@ function transcode() {
         # no hw codec possible
         if [ ${#hw} == 0 ]; then
             # software render
-            ffmpeg -i ARGUS\ raw.mov -b:v "$bitrate" -c:v h264 -map 0:v -map 0:a "$1"
+            ffmpeg -hide_banner -i "$1" -b:v "$bitrate" -c:v h264 -map 0:v -map 0:a "$2" -y
             ret=$?
         else
             # hardware render
-            ffmpeg -hwaccel cuda -i ARGUS\ raw.mov -b:v "$bitrate" -c:v h264_nvenc -map 0:v -map 0:a "$1"
+            ffmpeg -hide_banner -hwaccel cuda -i "$1" -b:v "$bitrate" -c:v h264_nvenc -map 0:v -map 0:a "$2" -y
             ret=$?
         fi
     fi
@@ -180,17 +217,22 @@ table="archive"
 function createTable() {
     # Use sqlite3 to check if the table exists
     if sqlite3 "$database" "SELECT name FROM sqlite_master WHERE type='table' AND name='$table';" | grep -q "$table"; then
-        printToConsole "Info:" "Table '$table' already exists in the database."
+        printToConsole "Info:" "'$table' table already exists in the database."
     else
         printToConsole "Info:" "Table '$table' does not exist in the database. Will create..."
         sqlite3 "$database" "CREATE TABLE IF NOT EXISTS "$table" (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, age INTEGER);"
     fi
 }
 
-function populteDb() {
+# function createRecord() {}
+# function readRecord() {}
+# function updateRecord() {}
+# function deleteRecord() {}
+
+function iterate() {
+    init
     while IFS= read -r line; do
-        baseName="$(basename "$line")"
-        dirName="$(dirname "$line")"
+        getNames "$line"
         # get the date the story was shot. update engDate
         getDate "$baseName"
         # gets file size in megabytes. updates a sizeInM variable
@@ -201,72 +243,26 @@ function populteDb() {
         # updates the adudioStreamCount variable
         getStreamCount "$line"
         # echo "$adudioStreamCount"
-        transcode "$line"
-    done <"$archiveDirFile"
+        # "$destinationPath/$(date +%Y%m%d-%H.%M)_$actualName-RAW.mxf"
+        # echo $engDate
+        if [ ${#engDate} == 8 ]; then
+            transcode "$line" "$destinationPath/"$engDate"_$newName.mp4"
+        else
+            printToConsole "Warning:" "File is missing a date"
+        fi
+    done <"$archiveListFile"
 }
 
 if [ -e "$database" ]; then
-    # printToConsole "Info:" "DB found"
-    # createTable
-    populteDb
+    printToConsole "Info:" "DB found"
+    createTable
+    iterate
 else
     printToConsole "Info:" "DB not found"
     touch "$database"
-    printToConsole "Info:" "...file created, please rerun teh script"
+    printToConsole "Info:" "...file created, please rerun the script"
     exit 0
 fi
 
-################################################# ----- #####################################################
-
-# Check if an argument was provided
-if [ $# -gt 0 ]; then
-    # reassign variables
-    while getopts e:s: flag; do
-        case "${flag}" in
-        # for -e
-        e) ext=${OPTARG} ;;
-        # for -s
-        s) searchDir=${OPTARG} ;;
-        esac
-    done
-fi
-
-# # recursive search for every file in tehe given directory
-# for file in $(find $searchDir -type f -print0  ); do
-#     echo -e "FILE: ${file}"
-#     # check file existsnce
-#     if [  -e "$file" ]; then
-#         # process file only if it has the given extension
-#         if [ "${file##*.}" == "$ext" ]; then
-#             # Check if the filename contains "raw," "RAW," or "Raw" (case-insensitive)
-#             if echo "$file" | grep -iq 'raw'; then
-#                 printToConsole "Info:" "Processing file ->\t$file"
-#                 printToLog "Info:" "Processing file ->\t$file"
-#                 # get file information about the number of audio streams
-#                 fileInfo=$(ffprobe -hide_banner -v error -select_streams a -show_entries stream=index -of csv=p=0 $file)
-#                 # get length
-#                 res=${#fileInfo}
-#                 # Stream #0.1 -> #0.1 [channel: 0 -> 0]
-#                 # Stream #0.2 -> #0.1 [channel: 0 -> 1]
-#                 if [ $res == 3 ]; then
-#                     echo "Two audio streams with one channel -> 0:1:0, 0:2:0"
-#                     # ffmbc -i "$file" -map_audio_channel '0:1:0:0:1:0' -map_audio_channel '0:2:0:0:1:1' -y "$dstDir/$(date +%Y%m%d-%H.%M)_$actualName-RAW.mxf"
-#                 fi
-#                 # Stream #0.1 -> #0.1 [channel: 0 -> 0]
-#                 # Stream #0.1 -> #0.1 [channel: 0 -> 1]
-#                 if [ $res == 1 ]; then
-#                     echo "One audio stream with two channel -> 0:1:0, 0:1:1"
-#                     #  ffmbc -i "$file" -map_audio_channel '0:1:0:0:1:0' -map_audio_channel '0:1:1:0:1:1' -y "$dstDir/$(date +%Y%m%d-%H.%M)_$actualName-RAW.mxf"
-#                 fi
-#             else
-#                 printToConsole "Warning:" "Unprocessed file (no raw) ->\t$file"
-#                 printToLog "Warning:" "Unprocessed file (no raw) ->\t$file"
-#             fi
-#         fi
-#     else
-#         printToConsole "Error:" "File not found ->\t$file"
-#     fi
-# done
-
 ## WHILE DEBUGGGING
-rm "$archiveDirFile"
+rm "$archiveListFile"
