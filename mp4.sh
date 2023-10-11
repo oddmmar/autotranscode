@@ -1,29 +1,17 @@
 #!/bin/bash
 
+# Trancoding scipt - (2023) Odwa Majila
+
 # A script used to automate the transcoding of News' TV material. The files are originally encoded in dvvideo
 # and need to be transcoded in H264/x264 for video and the audio enccoding can be copied @pcm_s16le.
 # Use wrapper .mp4. The aspect ratio must be the as source at 16x9, bit rate unspecified (SD@3.5M and HD@8.5M ??).
 # The script caters for input files with the follwoing structure:
 # V0, A1CH0, A2CH1 or V0, A1CH0:1 The output will alway be V0, A1CH0:1 Unique mono
 #
-# The output naming convention is as follows: YYYmmdd_SLUG_CTN_RAW - capitlise?? The date comes from the file name
+# The output naming convention is as follows: YYYmmdd_fileName_CTN_RAW - capitlise?? The date comes from the file name
 #
-# archive.db table structure:
-#   - id
-#   - archiveDir (absolute path minus mount point)
-#   - slug
-#   - originalSize (du -m)
-#   - resolution (SD/HD)
-#   - engDate (story date, contained in the file name)
-#   - adudioStreamCount
-#   - didTranscode
-#   - didPass
-#   - newName
-#   - newSize
-#   -
-#   -
 
-# Dependencies: neofetch
+# Dependencies: neofetch, sqlite, ffmpeg
 
 ############################################## Declarations ####################################################
 
@@ -39,8 +27,10 @@ bitrate="10M" # SD
 filter="raw"
 # default extension, but assignable with -e flag
 ext="mov"
+# today's day
+dateNow=$(date +%Y%m%d)
 # log creation based on day (new log each new day)
-log=$logPath/$(date +%Y-%m-%d).log
+log=$logPath/"${dateNow}.log"
 # create log file
 touch "$log"
 
@@ -172,15 +162,17 @@ function getStreamCount() {
     aCount=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$1")
     if [ ${#aCount} == 3 ]; then
         # for [0:1:0] [0:2:0]
-        adudioStreamCount=2
+        audioStreamCount=2
     else
         # for [0:1:0] [0:1:1]
-        adudioStreamCount=1
+        audioStreamCount=1
     fi
 
 }
 
 function transcode() {
+    # S1 - input file
+    # $2 - output file
     # NOTE
     # check constant bitrate
     # scan type - has to be kept interlaced (can't set this yet)
@@ -205,60 +197,88 @@ function transcode() {
         if [ ${#hw} == 0 ]; then
             # software render
             ffmpeg -hide_banner -i "$1" -b:v "$bitrate" -c:v h264 -map 0:v -map 0:a "$2" -y
-            ret=$?
+            didTranscode="$?"
         else
             # hardware render
             ffmpeg -hide_banner -hwaccel cuda -i "$1" -b:v "$bitrate" -c:v h264_nvenc -map 0:v -map 0:a "$2" -y
-            ret=$?
+            didTranscode="$?"
         fi
     fi
-    if [ $ret == 0 ]; then
-        didTranscode=true
-    else
-        didTranscode=false
-    fi
-    echo $didTranscode
+    echo "didTranscode: $didTranscode"
 }
 
 ################################################### DB #######################################################
 
-table="archive"
+table="tracker"
 
 function createTable() {
+    # $1 - creationDate
+    # $2 - engDate
+    # $3 - sourcePath
+    # $4 - fileName
+    # $5 - originalSize
+    # $6 - destination
+    # $7 - newName
+    # $8 - newSize
+    # $9 - audioStreamCount
+    # $10 - resolution
+    # $11 - didTranscode
+
     # Use sqlite3 to check if the table exists
     if sqlite3 "$database" "SELECT name FROM sqlite_master WHERE type='table' AND name='$table';" | grep -q "$table"; then
         printToConsole "Info:" "'$table' table already exists in the database."
     else
         printToConsole "Info:" "Table '$table' does not exist in the database. Will create..."
-        sqlite3 "$database" "CREATE TABLE IF NOT EXISTS "$table" (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, age INTEGER);"
+        sqlite3 "$database" "CREATE TABLE IF NOT EXISTS "$table" (id INTEGER PRIMARY KEY AUTOINCREMENT, \
+         creationDate TEXT, engDate TEXT, sourcePath TEXT, fileName TEXT, originalSize REAL, destination TEXT, \
+         newName TEXT,  newSize REAL, audioStreamCount INTEGER, resolution INTEGER, didTranscode INTEGER);"
     fi
 }
 
-# function createRecord() {}
+function createRecord() {
+    sqlite3 "$database" "INSERT INTO $table (creationDate, engDate, sourcePath, fileName, originalSize, destination, \
+     newName, newSize, audioStreamCount, resolution, didTranscode) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
+}
+
 # function readRecord() {}
 # function updateRecord() {}
 # function deleteRecord() {}
 
+################################################### EXEC ######################################################
+
 function iterate() {
+    # initialise
     init
+    printToLog "Info:" "Session started"
+
     while IFS= read -r line; do
         getNames "$line"
-        # get the date the story was shot. update engDate
-        getDate "$fileName"
+        echo $engDate
         # gets file size in megabytes. updates a sizeInM variable
         getSize "$line"
-        # originalSize=$sizeInM
+        originalSize=$sizeInM
         # updates the resolution variable with frame width
         getResolution "$line"
-        # updates the adudioStreamCount variable
+        echo "Resolution: $resolution"
+        # updates the audioStreamCount variable
         getStreamCount "$line"
-        # echo "$adudioStreamCount"
-        # "$destinationPath/$(date +%Y%m%d-%H.%M)_$actualName-RAW.mxf"
-        # echo $engDate
-        if [ ${#engDate} == 8 ]; then
-            transcode "$line" "$destinationPath/"$engDate"_$newName.mp4"
+        # echo "$audioStreamCount"
+        # get the date the story was shot. update engDate
+        getDate "$fileName"
+
+        if [ ${#engDate} != 8 ]; then
+            printToConsole "Warning:" "File is missing a date."
+            engDate="00000000"
+        fi
+
+        newFileName="${engDate}_${newName}_CTN.mp4"
+        (transcode "$line" "$destinationPath/$newFileName")
+
+        getSize "${destinationPath}/${newFileName}"
+        if [ "$?" == "" ]; then
+            newSize=0
         else
-            printToConsole "Warning:" "File is missing a date"
+            newSize=$sizeInM
         fi
     done <"$archiveListFile"
 }
@@ -267,6 +287,7 @@ if [ -e "$database" ]; then
     printToConsole "Info:" "DB found"
     createTable
     iterate
+    createRecord "$dateNow" "$engDate" "'${sourcePath}'" "'${fileName}'" "$originalSize" "'${destinationPath}'" "'${newFileName}'" "$newSize" "$audioStreamCount" "$resolution" "$didTranscode"
 else
     printToConsole "Info:" "DB not found"
     touch "$database"
