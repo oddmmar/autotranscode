@@ -15,9 +15,12 @@
 
 ############################################## Declarations ####################################################
 
+# destinationPath="/media/wctech/internal/500SSD/transcoding/DST"
+# sourcePath="/media/wctech/internal/500SSD/transcoding/SRC"
 destinationPath="/Volumes/DATA/media/Transcoding/DST"
 sourcePath="/Volumes/DATA/media/transcoding/SRC"
 # sourcePath="/Volumes/Seapoint_Archive_NAS_Drive"
+# logPath="/Volumes/DATA/media/Transcoding/LOG"
 logPath="/Volumes/DATA/media/Transcoding/LOG"
 # name of the db to keep track of completed jobs
 database="archive.db"
