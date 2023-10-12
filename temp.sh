@@ -16,14 +16,14 @@
 ############################################## Declarations ####################################################
 
 # WORK
-# destinationPath="/media/wctech/internal/500SSD/transcoding/DST"
-# logPath="/media/wctech/internal/500SSD/transcoding/MANIFEST"
-# sourcePath="/media/wctech/internal/500SSD/transcoding/SRC"
+destinationPath="/media/wctech/internal/3TBRUST/aspera"
+logPath="/media/wctech/internal/500SSD/Transcoding"
+sourcePath="/media/wctech/nas/TVARCHIVE/- AAA TO BE ARCHIVED AAA -"
 
 # DEV
-destinationPath="/Volumes/DATA/media/Transcoding/DST"
-logPath="/Volumes/DATA/media/Transcoding/MANIFEST"
-sourcePath="/Volumes/DATA/media/transcoding/SRC"
+# destinationPath="/Volumes/DATA/media/Transcoding/DST"
+# logPath="/Volumes/DATA/media/Transcoding/MANIFEST"
+# sourcePath="/Volumes/DATA/media/transcoding/SRC"
 
 # name of the db to keep track of completed jobs
 database="${logPath}/archive.db"
@@ -181,6 +181,25 @@ function transcode() {
 
 ################################################### DB #######################################################
 
+table="tracker"
+
+function createTable() {
+    # Use sqlite3 to check if the table exists
+    if sqlite3 "$database" "SELECT name FROM sqlite_master WHERE type='table' AND name='$table';" | grep -q "$table"; then
+        printToConsole "Info:" "'$table' table already exists in the database."
+    else
+        printToConsole "Info:" "Table '$table' does not exist in the database. Will create..."
+        sqlite3 "$database" "CREATE TABLE IF NOT EXISTS "$table" (id INTEGER PRIMARY KEY AUTOINCREMENT, \
+         creationDate TEXT, engDate TEXT, sourcePath TEXT, fileName TEXT, originalSize REAL, destination TEXT, \
+         newName TEXT,  newSize REAL, audioStreamCount INTEGER, resolution INTEGER, didTranscode INTEGER);"
+    fi
+}
+
+function createRecord() {
+    sqlite3 "$database" "INSERT INTO $table (creationDate, engDate, sourcePath, fileName, originalSize, destination, \
+    newName, newSize, audioStreamCount, resolution, didTranscode) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $resolution, $didTranscode)"
+}
+
 ################################################### EXEC ######################################################
 
 function process() {
@@ -217,24 +236,38 @@ function process() {
         fileInfo="Name: ${fileName}, ENG Date: ${engDate}, Size: ${originalSize} M, Resolution: ${resolution}, Stream count: ${audioStreamCount}, New Name: ${newFileName}, New Sise: ${newSize} M"
         printToConsole "Info:" "$fileInfo"
         printToLog "Info:" "$fileInfo"
+        createRecord "$dateNow" "$engDate" "'${sourcePath}'" "'${fileName}'" "$originalSize" "'${destinationPath}'" "'${newFileName}'" "$newSize" "$audioStreamCount"
     else
         printToConsole "Error::" "$fileName transcode not successful"
         printToLog "Error::" "$fileName transcode not successful"
     fi
 }
 
-if [[ "$inputFile" =~ [m][o][v] ]]; then
-    if [[ "$inputFile" =~ [Rr][Aa][Ww] ]]; then
-        printToLog "Info:" "Processing file ${inputFile}"
+################################################### EXEC ######################################################
+
+if [ -e "$database" ]; then
+    createTable
+    if [[ "$inputFile" =~ [m][o][v] ]]; then
+        if [[ "$inputFile" =~ [Rr][Aa][Ww] ]]; then
+            printToLog "Info:" "Processing file ${inputFile}"
+        else
+            printToLog "Warning:" "NO DATE! processing ${inputFile}"
+        fi
+        if [ -e "$inputFile" ]; then
+            process
+        fi
     else
-        printToLog "Warning:" "NO DATE! processing ${inputFile}"
-    fi
-    if [ -e "$inputFile" ]; then
-        process
+        printToConsole "Info:" "The script needs an .mov file. Please supply one and re-run"
+        exit 0
     fi
 else
-    printToConsole "Info:" "The script needs an .mov file. Please supply one and re-run"
+    printToConsole "Info:" "DB not found"
+    printToLog "Info:" "DB not found"
+    touch "$database"
+    printToConsole "Info:" "...file created, please rerun the script"
+    printToLog "Info:" "...file created, please rerun the script"
     exit 0
 fi
 
 # //155.234.144.67/volume1/SPT-TVARCHIVE /media/wctech/nas/TVARCHIVE cifs username=admin,password='*Rbf!fbR*',vers=1.0 0 0
+# sudo mount.cifs //155.234.144.67/SPT-TVARCHIVE /media/wctech/nas/TVARCHIVE username=admin,password='*Rbf!fbR*'
