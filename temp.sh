@@ -70,7 +70,11 @@ function printToConsole() {
 touch contentfiile.txt
 
 find "$sourcePath" -type f -print0 | while IFS= read -r -d $'\0' file; do
-    echo "$file" >>contentfiile.txt
+    if [[ "$file" =~ [m][o][v] ]]; then
+        if [[ "$file" =~ [Rr][Aa][Ww] ]]; then
+            echo "$file" >>contentfiile.txt
+        fi
+    fi
 done
 
 ################################################# ----- #####################################################
