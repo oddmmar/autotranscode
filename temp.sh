@@ -17,7 +17,7 @@
 
 # WORK
 # destinationPath="/media/wctech/internal/500SSD/transcoding/DST"
-# logPath="/media/wctech/internal/500SSD/transcoding//MANIFEST"
+# logPath="/media/wctech/internal/500SSD/transcoding/MANIFEST"
 # sourcePath="/media/wctech/internal/500SSD/transcoding/SRC"
 
 # DEV
@@ -40,21 +40,6 @@ log=$logPath/"${dateNow}.log"
 # create log file
 touch "$log"
 
-################################################# ----- #####################################################
-
-# Check if an argument was provided
-if [ $# -gt 0 ]; then
-    # reassign variables
-    while getopts e:s: flag; do
-        case "${flag}" in
-        # for -e
-        e) ext=${OPTARG} ;;
-        # for -s
-        s) sourcePath=${OPTARG} ;;
-        esac
-    done
-fi
-
 ################################################# OUTPUT #####################################################
 
 # prints to a log file defined above. takes two arguments:
@@ -63,10 +48,10 @@ fi
 function printToLog() {
     # echo -e "$(date +"%T")\t$1\t\t$2" >> "$log"
     if [ "$1" == "Info:" ]; then
-        echo -e "$(date +"%T")\t$1\t\t$2" >>"$log"
+        echo "$(date +"%T")\t$1\t\t$2" >>"$log"
     fi
     if [ "$1" == "Warning:" ]; then
-        echo -e "$(date +"%T")\t$1\t$2" >>"$log"
+        echo "$(date +"%T")\t$1\t$2" >>"$log"
     fi
 }
 
@@ -75,12 +60,32 @@ function printToLog() {
 # $2 - message content
 function printToConsole() {
     if [ "$1" == "Info:" ]; then
-        echo -e "$(date +"%T")\t$1\t\t$2"
+        echo "$(date +"%T")\t$1\t\t$2"
     fi
     if [ "$1" == "Warning:" ]; then
-        echo -e "$(date +"%T")\t$1\t$2"
+        echo "$(date +"%T")\t$1\t$2"
     fi
 }
+
+################################################# ----- #####################################################
+
+# Check if an argument was provided
+if [ $# -gt 0 ]; then
+    # reassign variables
+    while getopts "f:" flag; do
+        case "${flag}" in
+        f) inputFile=${OPTARG} ;;
+        ?) printToConsole "Info:" "Hello" ;;
+        esac
+    done
+fi
+
+if [ ${#inputFile} == 0 ]; then
+    printToConsole "Error:" "An ipnut file (-i) is needed."
+    echo "An input file (-i) is needed."
+    echo "Exiting"
+    exit 0
+fi
 
 ################################################# HELPER #####################################################
 
@@ -93,21 +98,6 @@ function init() {
     touch "$archiveListFile"
     # recursively search the archive using the filter variable
     find "$sourcePath" -type f | grep -i $filter >>"$archiveListFile"
-}
-
-function getUtilites() {
-    local depNeofetch=$(which neofetch)
-    local depSqlite=$(which sqlite3)
-
-    if [[ ${#depNeofetch} == 0 || 4{#depSqlite} == 0 ]]; then
-        if [[ "$(uname)" == "Darwin" ]]; then
-            brew install neofetch
-            brew install sqlite
-        elif [[ "$(uname)" == "Linux"* ]]; then
-            sudo apt install neofetch
-            sudo apt install sqlite3
-        fi
-    fi
 }
 
 ################################################## FILE ######################################################
@@ -176,42 +166,6 @@ function getStreamCount() {
 
 }
 
-# function transcode() {
-#     # S1 - input file
-#     # $2 - output file
-#     # NOTE
-#     # check constant bitrate
-#     # scan type - has to be kept interlaced (can't set this yet)
-
-#     # map all video channels and map all audio channels from in to out
-#     if [[ "$(uname)" == "Darwin" ]]; then
-#         local hw=$(neofetch | grep -i amd)
-#         # no hw codec possible
-#         if [ ${#hw} == 0 ]; then
-#             # software render
-#             ffmpeg -hide_banner -i "$1" -b:v "$bitrate" -c:v h264 -map 0:v -map 0:a "$2" -y
-#             ret=$?
-#         else
-#             # hardware render
-#             ffmpeg -hide_banner -hwaccel videotoolbox -i "$1" -b:v "$bitrate" -c:v h264_videotoolbox -map 0:v -map 0:a "$2" -y
-#             ret=$?
-#         fi
-#     elif [[ "$(uname)" == "Linux" ]]; then
-#         local hw=$(neofetch | grep -i nvidia)
-#         # no hw codec possible
-#         if [ ${#hw} == 0 ]; then
-#             # software render
-#             ffmpeg -hide_banner -i "$1" -b:v "$bitrate" -c:v h264 -map 0:v -map 0:a "$2" -y
-#             didTranscode="$?"
-#         else
-#             # hardware render
-#             ffmpeg -hide_banner -hwaccel cuda -i "$1" -b:v "$bitrate" -c:v h264_nvenc -map 0:v -map 0:a "$2" -y
-#             didTranscode="$?"
-#         fi
-#     fi
-#     echo "didTranscode: $didTranscode"
-# }
-
 function transcode() {
     # S1 - input file
     # $2 - output file
@@ -220,125 +174,67 @@ function transcode() {
     # scan type - has to be kept interlaced (can't set this yet)
 
     # map all video channels and map all audio channels from in to out
-    ffmpeg '-i' "$1" '-b:v' "$bitrate" '-c:v' "h264_videotoolbox" '-map' '0:v' '-map' '0:a' "$2" '-y'
-    # ffmpeg -hide_banner -hwaccel cuda -i "$1" -b:v "$bitrate" -c:v h264_nvenc -map 0:v -map 0:a "$2" -y
+    # ffmpeg -hide_banner -i "$1" -b:v "$bitrate" -c:v h264_nvenc -map 0:v -map 0:a "$2" -y
+    ffmpeg -hide_banner -i "$1" -b:v "$bitrate" -c:v h264_videotoolbox -map 0:v -map 0:a "$2" -y
     didTranscode=$?
 }
 
 ################################################### DB #######################################################
-
-table="tracker"
-
-function createTable() {
-    # $1 - creationDate
-    # $2 - engDate
-    # $3 - sourcePath
-    # $4 - fileName
-    # $5 - originalSize
-    # $6 - destination
-    # $7 - newName
-    # $8 - newSize
-    # $9 - audioStreamCount
-    # $10 - resolution
-    # $11 - didTranscode
-
-    # Use sqlite3 to check if the table exists
-    if sqlite3 "$database" "SELECT name FROM sqlite_master WHERE type='table' AND name='$table';" | grep -q "$table"; then
-        printToConsole "Info:" "'$table' table already exists in the database."
-    else
-        printToConsole "Info:" "Table '$table' does not exist in the database. Will create..."
-        sqlite3 "$database" "CREATE TABLE IF NOT EXISTS "$table" (id INTEGER PRIMARY KEY AUTOINCREMENT, \
-         creationDate TEXT, engDate TEXT, sourcePath TEXT, fileName TEXT, originalSize REAL, destination TEXT, \
-         newName TEXT,  newSize REAL, audioStreamCount INTEGER, resolution INTEGER, didTranscode INTEGER);"
-    fi
-}
-
-function createRecord() {
-    sqlite3 "$database" "INSERT INTO $table (creationDate, engDate, sourcePath, fileName, originalSize, destination, \
-    newName, newSize, audioStreamCount, resolution, didTranscode) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $resolution, $didTranscode)"
-}
-
-# function readRecord() {}
-# function updateRecord() {}
-# function deleteRecord() {}
 
 ################################################### EXEC ######################################################
 
 function process() {
     # initialise
     init
-    printToLog "Info:" "Session started"
-
-    # while IFS= read -r line; do
-
-    getNames "$file"
+    getNames "$inputFile"
     # gets file size in megabytes. updates a sizeInM variable
-    getSize "$file"
+    getSize "$inputFile"
     originalSize=$sizeInM
     # updates the resolution variable with frame width
-    getResolution "$file"
-    # echo "Resolution: $resolution"
+    getResolution "$inputFile"
     # updates the audioStreamCount variable
-    getStreamCount "$file"
-    # echo "$audioStreamCount"
+    getStreamCount "$inputFile"
     # get the date the story was shot. update engDate
     getDate "$fileName"
     if [ ${#engDate} == 0 ]; then
         printToConsole "Warning:" "File is missing a date."
         engDate="00000000"
     fi
+
     newFileName="${engDate}_${newName}_CTN.mp4"
-    transcode "$file" "$destinationPath/$newFileName"
+
+    transcode "$inputFile" "$destinationPath/$newFileName"
+    didTranscode="$?"
+
     getSize "${destinationPath}/${newFileName}"
     if [ "$?" == "" ]; then
         newSize=0
     else
         newSize=$sizeInM
     fi
-    createRecord "$dateNow" "$engDate" "'${sourcePath}'" "'${fileName}'" "$originalSize" "'${destinationPath}'" "'${newFileName}'" "$newSize" "$audioStreamCount"
 
-    # done <"$archiveListFile"
+    if [ "${didTranscode}" == 0 ]; then
+        fileInfo="Name: ${fileName}, ENG Date: ${engDate}, Size: ${originalSize} M, Resolution: ${resolution}, Stream count: ${audioStreamCount}, New Name: ${newFileName}, New Sise: ${newSize} M"
+        printToConsole "Info:" "$fileInfo"
+        printToLog "Info:" "$fileInfo"
+    else
+        printToConsole "Error::" "$fileName transcode not successful"
+        printToLog "Error::" "$fileName transcode not successful"
+    fi
 }
 
-function temp() {
-    # Use a while loop with null-terminated input from find
-    find "$sourcePath" -type f -print0 | while IFS= read -r -d $'\0' file; do
-        # Check if the filename contains "raw," "RAW," or "Raw" (case-insensitive)
-        if [[ "$file" =~ [Rr][Aa][Ww] ]]; then
-            if [ -e "$file" ]; then
-                echo "FILE: $file"
-            fi
-        fi
-    done
-}
-
-if [ -e "$database" ]; then
-    printToConsole "Info:" "DB found"
-    createTable
-    find "$sourcePath" -type f -print0 | while IFS= read -r -d $'\0' file; do
-        if [[ "$file" =~ [m][o][v] ]]; then
-            if [[ "$file" =~ [Rr][Aa][Ww] ]]; then
-                printToLog "Info:" "Processing file ${file}"
-            else
-                printToLog "Warning:" "No date found but processing ${file}"
-            fi
-            if [ -e "$file" ]; then
-                # getUtilites
-                # temp
-                process
-            fi
-        fi
-        echo "FILENAME: $file"
-    done
-
+if [[ "$inputFile" =~ [m][o][v] ]]; then
+    if [[ "$inputFile" =~ [Rr][Aa][Ww] ]]; then
+        printToLog "Info:" "Processing file ${inputFile}"
+    else
+        printToLog "Warning:" "NO DATE! processing ${inputFile}"
+    fi
+    if [ -e "$inputFile" ]; then
+        process
+    fi
 else
-    printToConsole "Info:" "DB not found"
-    printToLog "Info:" "DB not found"
-    touch "$database"
-    printToConsole "Info:" "...file created, please rerun the script"
-    printToLog "Info:" "...file created, please rerun the script"
+    printToConsole "Info:" "The script needs an .mov file. Please supply one and re-run"
     exit 0
 fi
 
-## WHILE DEBUGGGING
-# rm "$archiveListFile"
+# //155.234.144.67/volume1/SPT-TVARCHIVE /media/wctech/nas/TVARCHIVE cifs username=admin,password='*Rbf!fbR*',vers=1.0 0 0
