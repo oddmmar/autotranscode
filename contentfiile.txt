@@ -1,9 +1,0 @@
-/Volumes/DATA/media/transcoding/SRC/ARGUS raw.mov
-/Volumes/DATA/media/transcoding/SRC/AGRICRAW-SRC.mov
-/Volumes/DATA/media/transcoding/SRC/.DS_Store
-/Volumes/DATA/media/transcoding/SRC/2TRACK_10.mov
-/Volumes/DATA/media/transcoding/SRC/ARGUS raw copy.mov
-/Volumes/DATA/media/transcoding/SRC/2TRACK_DEMO Raw.mov
-/Volumes/DATA/media/transcoding/SRC/2TRACK raw 040222.mov
-/Volumes/DATA/media/transcoding/SRC/HDBLOOD.mov
-/Volumes/DATA/media/transcoding/SRC/ARGUS raw.mov

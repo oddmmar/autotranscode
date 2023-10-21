@@ -27,7 +27,6 @@ touch "$log"
 # $1 - message type
 # $2 - message
 function printToLog() {
-    ou
     echo -e "$(date +"%T")\t$1\t$2" >>"$log"
 }
 
@@ -78,15 +77,3 @@ for file in $srcDir/*$ext; do
         fi
     fi
 done
-echo -e "\n"
-
-#       |            |
-#       |            |
-#   A1  |     O      |     O
-#       |____________|___________
-#       |            |
-#   A2  |     O      |     X
-#       |            |
-#       |____________|___________
-#           CH 0        CH 1
-#
