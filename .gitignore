@@ -6,6 +6,8 @@
 .DS_Store
 .AppleDouble
 .LSOverride
+archive.db
+notes.txt
 
 # Icon must end with two \r
 Icon

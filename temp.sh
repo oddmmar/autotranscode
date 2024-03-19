@@ -16,13 +16,14 @@
 ############################################## Declarations ####################################################
 
 # WORK
-destinationPath="/media/wctech/internal/3TBRUST/aspera"
-logPath="/media/wctech/internal/500SSD/Transcoding"
-sourcePath="/media/wctech/nas/TVARCHIVE/- AAA TO BE ARCHIVED AAA -"
+# destinationPath="/media/wctech/internal/3TBRUST/aspera"
+# logPath="/media/wctech/internal/500SSD/Transcoding"
+# sourcePath="/media/wctech/nas/TVARCHIVE/- AAA TO BE ARCHIVED AAA -"
+# sourcePath="/media/wctech/nas/TVARCHIVE02/AAA TO BE ARCHIVED 2 AAA"
 
 # DEV
-# destinationPath="/Volumes/DATA/media/Transcoding/DST"
-# logPath="/Volumes/DATA/media/Transcoding/MANIFEST"
+destinationPath="/Volumes/DATA/media/Transcoding/DST"
+logPath="/Volumes/DATA/media/Transcoding/MANIFEST"
 # sourcePath="/Volumes/DATA/media/transcoding/SRC"
 
 # name of the db to keep track of completed jobs
@@ -48,10 +49,10 @@ touch "$log"
 function printToLog() {
     # echo -e "$(date +"%T")\t$1\t\t$2" >> "$log"
     if [ "$1" == "Info:" ]; then
-        echo "$(date +"%T")\t$1\t\t$2" >>"$log"
+        echo -e "$(date +"%T")\t$1\t\t$2" >>"$log"
     fi
     if [ "$1" == "Warning:" ]; then
-        echo "$(date +"%T")\t$1\t$2" >>"$log"
+        echo -e "$(date +"%T")\t$1\t$2" >>"$log"
     fi
 }
 
@@ -60,44 +61,65 @@ function printToLog() {
 # $2 - message content
 function printToConsole() {
     if [ "$1" == "Info:" ]; then
-        echo "$(date +"%T")\t$1\t\t$2"
+        echo -e "$(date +"%T")\t$1\t\t$2"
     fi
     if [ "$1" == "Warning:" ]; then
-        echo "$(date +"%T")\t$1\t$2"
+        echo -e "$(date +"%T")\t$1\t$2"
     fi
 }
 
-touch contentfiile.txt
-
-find "$sourcePath" -type f -print0 | while IFS= read -r -d $'\0' file; do
-    if [[ "$file" =~ [m][o][v] ]]; then
-        if [[ "$file" =~ [Rr][Aa][Ww] ]]; then
-            echo "$file" >>contentfiile.txt
+# $1 - directory to search
+# $2  - content list file name
+function sourceDirectoryList() {
+    echo "${#1}"
+    find "$1" -type f -print0 | while IFS= read -r -d $'\0' file; do
+        if [[ "$file" =~ [m][o][v] ]]; then
+            if [[ "$file" =~ [Rr][Aa][Ww] ]]; then
+                echo "$file" >>$2
+            fi
         fi
-    fi
-done
+    done
+}
 
 ################################################# ----- #####################################################
+
+################################################# HELPER #####################################################
 
 # Check if an argument was provided
 if [ $# -gt 0 ]; then
     # reassign variables
-    while getopts "f:" flag; do
+    while getopts "f:l:" flag; do
         case "${flag}" in
+        # for  the input file flag
         f) inputFile=${OPTARG} ;;
+        # for the directory listing creation
+        l) srcList=${OPTARG} ;;
         ?) printToConsole "Info:" "Hello" ;;
         esac
     done
 fi
 
 if [ ${#inputFile} == 0 ]; then
-    printToConsole "Error:" "An ipnut file (-i) is needed."
-    echo "An input file (-i) is needed."
+    printToConsole "Error:" "An ipnut file (-f) is required, please try again."
+    echo "An ipnut file (-f) is required, please try again"
     echo "Exiting"
     exit 0
-fi
+else
+    sourcePath="$(dirname $inputFile)"
+    # printToConsole "Info:" "$sourcePath"
+    srcDirName="$(basename $sourcePath)"
+    # src directory list
+    srcList="${srcDirName}_content_list.txt"
+    touch "$srcList"
+    if ! [ -f "${srcList}" ]; then
+        echo "SRC dir listing file does not exist."
+    else
+        sourceDirectoryList "$sourcePath" "$srcList"
+    fi
 
-################################################# HELPER #####################################################
+    echo "${#sourcePath}"
+
+fi
 
 # initialise by creating the neccessary infrastructure
 function init() {
@@ -278,6 +300,3 @@ else
     printToLog "Info:" "...file created, please rerun the script"
     exit 0
 fi
-
-# //155.234.144.67/volume1/SPT-TVARCHIVE /media/wctech/nas/TVARCHIVE cifs username=admin,password='*Rbf!fbR*',vers=1.0 0 0
-# sudo mount.cifs //155.234.144.67/SPT-TVARCHIVE /media/wctech/nas/TVARCHIVE username=admin,password='*Rbf!fbR*'
