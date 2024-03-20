@@ -6,9 +6,9 @@ This is a Bash script that performs transcoding of video files from a source dir
 
 **Functions**:
 
-* `printToLog:` Prints messages to a log file with a timestamp and message type (Info or Warning). \
-* `printToConsole:` Prints messages to the console with a timestamp and message type. \
-* `sourceDirectoryList:` Generates a list of files in a given directory that match a specific pattern (raw files with .mov extension). \
+* `printToLog:` Prints messages to a log file with a timestamp and message type (Info or Warning).
+* `printToConsole:` Prints messages to the console with a timestamp and message type.
+* `sourceDirectoryList:` Generates a list of files in a given directory that match a specific pattern (raw files with .mov extension).
 
 **Helper Functions:**
 
